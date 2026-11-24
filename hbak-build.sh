@@ -27,6 +27,13 @@ mkdir -p "$out"
 build_info="$out/build-info.txt"
 printf '%s\n%s\n%s\n' "$version" "$(git rev-parse HEAD)" "$(git rev-parse --short HEAD)" > "$build_info"
 
+# This release reads its version from generated sources (newer upstream uses the __aero_build
+# section above); stamp them for the build and restore them after.
+version_files=(Sources/Common/versionGenerated.swift Sources/Common/gitHashGenerated.swift)
+trap 'git checkout -q -- "${version_files[@]}"' EXIT
+sed -i '' "s|^public let aeroSpaceAppVersion = .*|public let aeroSpaceAppVersion = \"$version\"|" Sources/Common/versionGenerated.swift
+sed -i '' "s|^public let gitHash = .*|public let gitHash = \"$(git rev-parse HEAD)\"|" Sources/Common/gitHashGenerated.swift
+
 echo "building AeroSpace $version"
 (
   cd xcode
@@ -44,9 +51,13 @@ swift=(swift)
 if command -v swiftly > /dev/null && swiftly list 2> /dev/null | grep -qF "$(cat .swift-version)"; then
   swift=(swiftly run swift "+$(cat .swift-version)")
 fi
+# Force a relink: SwiftPM reuses a cached binary when only linker flags change, which drops the
+# version info section and makes the CLI report 0.0.0-SNAPSHOT.
+cli_bin_dir=$("${swift[@]}" build -c release --product aerospace --show-bin-path)
+[[ -e "$cli_bin_dir/aerospace" ]] && trash "$cli_bin_dir/aerospace"
 "${swift[@]}" build -c release --product aerospace \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __aero_build -Xlinker "$build_info"
-cp "$("${swift[@]}" build -c release --product aerospace --show-bin-path)/aerospace" "$out/aerospace"
+cp "$cli_bin_dir/aerospace" "$out/aerospace"
 codesign -f -s "$identity" "$out/aerospace"
 echo "built: $out/AeroSpace.app $out/aerospace"
 
