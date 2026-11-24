@@ -22,3 +22,6 @@
 # XCode User settings
 xcuserdata/
 xcshareddata/
+
+# hbak fork build output
+/.hbak-release/
