@@ -14,6 +14,9 @@ struct FocusCommand: Command {
         ) {
             return .fail
         }
+        if case .cycle(let next) = args.target {
+            return cycleFocus(target.workspace, next: next)
+        }
         // todo bug: floating windows break mru
         let floatingWindows = args.floatingAsTiling ? await makeFloatingWindowsSeenAsTiling(workspace: target.workspace) : []
         defer {
@@ -34,6 +37,7 @@ struct FocusCommand: Command {
                 }
             case .windowId(let windowId):
                 if let windowToFocus = Window.get(byId: windowId) {
+                    if args.keepFullscreen { transferFullscreen(from: focus.windowOrNil, to: windowToFocus) }
                     return .from(bool: windowToFocus.focusWindow())
                 } else {
                     return .fail(io.err("Can't find window with ID \(windowId)"))
@@ -62,6 +66,8 @@ struct FocusCommand: Command {
                     }
                 }
                 return .from(bool: windows[targetIndex].focusWindow())
+            case .cycle:
+                return .fail(io.err(bugPrompt("--cycle is handled before the floating-window setup")))
         }
     }
 }
@@ -213,4 +219,28 @@ extension TreeNode {
                 die("Impossible")
         }
     }
+}
+
+@MainActor
+private func cycleFocus(_ workspace: Workspace, next: Bool) -> BinaryExitCode {
+    let windows = workspace.allLeafWindowsRecursive.sorted { $0.windowId < $1.windowId }
+    guard windows.count > 1 else { return .succ }
+    let current = focus.windowOrNil
+    let index = windows.firstIndex { $0 == current }
+    let newIndex: Int = switch index {
+        case nil: 0
+        case let i?: (i + (next ? 1 : windows.count - 1)) % windows.count
+    }
+    let windowToFocus = windows[newIndex]
+    transferFullscreen(from: current, to: windowToFocus)
+    return .from(bool: windowToFocus.focusWindow())
+}
+
+@MainActor
+private func transferFullscreen(from old: Window?, to new: Window) {
+    guard let old, old != new, old.isFullscreen, !new.isFloating,
+          old.visualWorkspace == new.visualWorkspace else { return }
+    new.isFullscreen = true
+    new.noOuterGapsInFullscreen = old.noOuterGapsInFullscreen
+    old.isFullscreen = false
 }

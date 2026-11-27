@@ -31,8 +31,16 @@ extension TreeNode {
             case .window(let window):
                 if window.windowId != currentlyManipulatedWithMouseWindowId {
                     lastAppliedLayoutVirtualRect = virtual
-                    if window.isFullscreen && window == context.workspace.rootTilingContainer.mostRecentWindowRecursive {
+                    let mru = context.workspace.rootTilingContainer.mostRecentWindowRecursive
+                    if window.isFullscreen && window == mru {
                         lastAppliedLayoutPhysicalRect = nil
+                        window.layoutFullscreen(context)
+                    } else if let mru, mru.isFullscreen {
+                        // hbak fork: windows hidden behind a fullscreen window keep the fullscreen
+                        // frame too, so handing fullscreen to one of them only raises it (no resize).
+                        lastAppliedLayoutPhysicalRect = nil
+                        window.isFullscreen = false
+                        window.noOuterGapsInFullscreen = mru.noOuterGapsInFullscreen
                         window.layoutFullscreen(context)
                     } else {
                         lastAppliedLayoutPhysicalRect = physicalRect

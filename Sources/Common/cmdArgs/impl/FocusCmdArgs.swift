@@ -14,6 +14,8 @@ public struct FocusCmdArgs: CmdArgs {
             "--fail-if-fullscreen": trueBoolFlag(\.failIfFullscreen),
             "--fail-if-macos-native-fullscreen": trueBoolFlag(\.failIfMacosNativeFullscreen),
             "--wrap-around": trueBoolFlag(\.wrapAroundAlias),
+            "--keep-fullscreen": trueBoolFlag(\.keepFullscreen),
+            "--cycle": singleValueSubArgParser(\.cycle, "(next|prev)", parseCycle),
         ],
         posArgs: [ArgParser(\.cardinalOrDfsDirection, upcastArgParserFun(parseCardinalOrDfsDirection))],
         conflictingOptions: [
@@ -30,6 +32,12 @@ public struct FocusCmdArgs: CmdArgs {
     public var dfsIndex: UInt32? = nil
     public var cardinalOrDfsDirection: CardinalOrDfsDirection? = nil
     public var floatingAsTiling: Bool = true
+    // hbak fork: with --window-id, hand the focused window's fullscreen to the target in the same
+    // layout pass, so flipping between fullscreen windows doesn't flash the split layout.
+    public var keepFullscreen: Bool = false
+    // hbak fork: --cycle next|prev rotates focus through every window on the workspace, floating
+    // included, in window-id order, wrapping. Carries fullscreen over like --keep-fullscreen.
+    public var cycle: String? = nil
 
     public init(rawArgs: StrArrSlice, cardinalOrDfsDirection: CardinalOrDfsDirection) {
         self.commonState = .init(rawArgs)
@@ -63,6 +71,7 @@ public enum FocusCmdTarget {
     case windowId(UInt32)
     case dfsIndex(UInt32)
     case dfsRelative(DfsNextPrev)
+    case cycle(next: Bool)
 
     var isDfsRelative: Bool {
         switch self {
@@ -86,6 +95,9 @@ extension FocusCmdArgs {
         if let dfsIndex {
             return .dfsIndex(dfsIndex)
         }
+        if let cycle {
+            return .cycle(next: cycle == "next")
+        }
         die("Parser invariants are broken")
     }
 
@@ -103,10 +115,18 @@ func parseFocusCmdArgs(_ args: StrArrSlice) -> ParsedCmd<FocusCmdArgs> {
                 : .cmd(raw)
         }
         .filter("Mandatory argument is missing. \(CardinalOrDfsDirection.unionLiteral), --window-id or --dfs-index is required") {
-            $0.cardinalOrDfsDirection != nil || $0.windowId != nil || $0.dfsIndex != nil
+            $0.cardinalOrDfsDirection != nil || $0.windowId != nil || $0.dfsIndex != nil || $0.cycle != nil
         }
-        .filter("--window-id is incompatible with other options") {
-            $0.windowId == nil || $0 == FocusCmdArgs(rawArgs: args, windowId: $0.windowId.orDie())
+        .filter("--cycle is incompatible with other options") {
+            $0.cycle == nil || ($0.cardinalOrDfsDirection == nil && $0.windowId == nil && $0.dfsIndex == nil)
+        }
+        .filter("--window-id is incompatible with other options except --keep-fullscreen") {
+            var plain = $0
+            plain.keepFullscreen = false
+            return $0.windowId == nil || plain == FocusCmdArgs(rawArgs: args, windowId: $0.windowId.orDie())
+        }
+        .filter("--keep-fullscreen requires --window-id") {
+            $0.keepFullscreen.implies($0.windowId != nil)
         }
         .filter("--dfs-index is incompatible with other options") {
             $0.dfsIndex == nil || $0 == FocusCmdArgs(rawArgs: args, dfsIndex: $0.dfsIndex.orDie())
@@ -117,7 +137,7 @@ func parseFocusCmdArgs(_ args: StrArrSlice) -> ParsedCmd<FocusCmdArgs> {
             }
             return switch $0.target {
                 case .direction: true
-                case .dfsIndex, .dfsRelative, .windowId: false
+                case .dfsIndex, .dfsRelative, .windowId, .cycle: false
             }
         }
         .filter("(dfs-next|dfs-prev) only supports --boundaries workspace") {
@@ -139,4 +159,8 @@ private func parseBoundaries(i: SubArgParserInput) -> ParsedCliArgs<FocusCmdArgs
     } else {
         return .fail("<boundary> is mandatory", advanceBy: 0)
     }
+}
+
+private func parseCycle(_ str: String) -> ResOrStr<String> {
+    str == "next" || str == "prev" ? .success(str) : .failure("--cycle takes next or prev, got '\(str)'")
 }

@@ -16,7 +16,8 @@ aerospace focus [-h|--help] [--ignore-floating] [--wrap-around]
 aerospace focus [-h|--help] [--ignore-floating] [--wrap-around]
                 [--boundaries <boundary>] [--boundaries-action <action>]
                 (dfs-next|dfs-prev)
-aerospace focus [-h|--help] --window-id <window-id>
+aerospace focus [-h|--help] --window-id <window-id> [--keep-fullscreen]
+aerospace focus [-h|--help] --cycle (next|prev)
 aerospace focus [-h|--help] --dfs-index <dfs-index>
 
 // end::synopsis[]
@@ -57,6 +58,13 @@ The flag is incompatible with either `--boundaries-action` or `--boundaries`.
 
 --window-id <window-id>::
 Focus the window with specified `<window-id>`
+
+--cycle (next|prev)::
+Rotate focus through every window on the workspace, floating included, in window-id order, wrapping.
+Fullscreen carries over to the newly focused window.
+
+--keep-fullscreen::
+With `--window-id`: if the focused window is fullscreen (by the `fullscreen` command), the target window becomes fullscreen instead, in one layout pass.
 
 --dfs-index <dfs-index>::
 Focus window by its index, based on a depth-first search (DFS) of the window within the workspace tree.
